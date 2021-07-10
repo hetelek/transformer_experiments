@@ -73,7 +73,7 @@ c5 = nn.Conv2d(3, 3, 5, padding=(2, 2))
 d = nn.Dropout(p=0.4)
 
 def forward(x):
-    o = d(c(x))
+    o = c(x)
     # o = c2(o)
     # o = d(c3(o))
     # o = c4(o)
