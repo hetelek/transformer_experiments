@@ -9,6 +9,14 @@ from torch.utils.tensorboard import SummaryWriter
 # tensorboard --logdir=runs
 writer = SummaryWriter()
 
+
+# a = t.Tensor([[1, 1, 1], [2, 2, 2]])
+# b = t.Tensor([[1, 1, 1], [2, 2, 2]])
+# c = t.cat([a, b], 1)
+# print(c.shape)
+# print(c)
+# exit(0)
+
 class ImageEncoder(nn.Module):
     def __init__(self):
         super().__init__()
@@ -37,20 +45,35 @@ class MetaEncoder(nn.Module):
         x = self.linear_2(x)
         return x
 
-image_encoder = ImageEncoder()
-meta_encoder = MetaEncoder()
+class DecisionMaker(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.image_encoder = ImageEncoder()
+        self.meta_encoder = MetaEncoder()
+        self.linear_1 = nn.Linear(100, 200)
+        self.linear_2 = nn.Linear(200, 200)
+        self.linear_3 = nn.Linear(200, 2) # [target_speed, target_angle]
 
-optimizer = t.optim.Adam(image_encoder.parameters(), lr=1e-4)
+    def forward(self, images, metas):
+        assert images.shape[0] == metas.shape[0]
+        encoded_images = self.image_encoder(images)
+        encoded_metas = self.meta_encoder(metas)
+        x = t.cat([encoded_images, encoded_metas], 1)
+        x = self.linear_1(x)
+        x = self.linear_2(x)
+        x = self.linear_3(x)
+        return x
+
+decision_maker = DecisionMaker()
+optimizer = t.optim.Adam(decision_maker.parameters(), lr=1e-4)
 
 for epoch in range(0, 1000):
     batch, labels = data.load_random_batch(100)
     batch = batch / 255.
 
-    encoder_output = image_encoder(batch)
-    print(encoder_output.shape)
-    exit(0)
+    decision_output = decision_maker(batch, t.randn(100, 4))
+    loss = t.sum(t.abs(decision_output - 0))
 
-    loss = t.sum(t.abs(batch - encoder_output))
     print(loss)
     writer.add_scalar("Loss/train", loss, epoch)
 
@@ -59,14 +82,11 @@ for epoch in range(0, 1000):
     optimizer.step()
 
     if epoch % 10 == 0:
-        for i in range(0, encoder_output.shape[0]):
-            data.save_image(encoder_output[i] * 255., name='imgs/{}.png'.format(i))
-
         i = data.load_disk_image('test.png')
         i = i.unsqueeze(0)
-        encoder_output = ae(i)
-
-        data.save_image(encoder_output)
+        decision_output = decision_maker(i, t.randn(1, 4))
+        print(decision_output)
+        # data.save_image(decision_output)
         # data.save_image(batch[max] * 255., name='img_high_loss.png')
         # data.save_image(batch[min] * 255., name='img_low_loss.png')
 
