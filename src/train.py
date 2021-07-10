@@ -9,25 +9,33 @@ from torch.utils.tensorboard import SummaryWriter
 # tensorboard --logdir=runs
 writer = SummaryWriter()
 
-class AutoEncoder(nn.Module):
+class ImageEncoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv2d_1 = nn.Conv2d(3, 3, 5, padding=2)
         self.conv2d_2 = nn.Conv2d(3, 3, 5, padding=2)
+        self.flatten = nn.Flatten()
+        self.linear_1 = nn.Linear(3072, 100)
+        self.linear_2 = nn.Linear(100, 50)
 
     def forward(self, x):
         x = self.conv2d_1(x)
         x = self.conv2d_2(x)
+        x = self.flatten(x)
+        x = self.linear_1(x)
+        x = self.linear_2(x)
         return x
 
-ae = AutoEncoder()
-optimizer = t.optim.Adam(ae.parameters(), lr=1e-4)
+image_encoder = ImageEncoder()
+optimizer = t.optim.Adam(image_encoder.parameters(), lr=1e-4)
 
 for epoch in range(0, 1000):
     batch, labels = data.load_random_batch(100)
     batch = batch / 255.
 
-    encoder_output = ae(batch)
+    encoder_output = image_encoder(batch)
+    print(encoder_output.shape)
+    exit(0)
 
     loss = t.sum(t.abs(batch - encoder_output))
     print(loss)
