@@ -55,13 +55,16 @@ def load_disk_image(name):
 #     i, _ = load_random_image()
 #     time.sleep(1)
 
-images = []
-for _ in range(0, 100):
-    i = load_random_image()
-    i = i / 255.
-    images.append(i)
+def load_batch(batch_size):
+    images = []
+    for _ in range(0, batch_size):
+        i = load_random_image()
+        i = i / 255.
+        images.append(i)
 
-batch = torch.stack(images)
+    batch = torch.stack(images)
+    return batch
+
 # batch = batch.type(torch.float) # torch.tensor(i, dtype=torch.float)
 # batch = torch.unsqueeze(batch, 0)
 
@@ -90,6 +93,7 @@ for a in all:
 optimizer = torch.optim.SGD(params, lr=1e-8, momentum=0.9)
 
 for epoch in range(0, 10000):
+    batch = load_batch(100)
     o = forward(batch)
     loss = torch.sum(torch.abs(o - batch))
     print(loss)
