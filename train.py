@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import optimizer
 
+# tensorboard --logdir=runs
 import torch
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
