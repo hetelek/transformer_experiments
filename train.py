@@ -45,31 +45,36 @@ def load_random_image():
 #     time.sleep(1)
 
 i = load_random_image()
+i = i / 255.
 
 batch = i.clone().detach().type(torch.float) # torch.tensor(i, dtype=torch.float)
 batch = torch.unsqueeze(batch, 0)
 
-c = nn.Conv2d(3, 6, 5, padding=(2, 2))
-c2 = nn.Conv2d(6, 10, 5, padding=(2, 2))
-c3 = nn.Conv2d(10, 50, 5, padding=(2, 2))
-c4 = nn.Conv2d(50, 30, 5, padding=(2, 2))
-c5 = nn.Conv2d(30, 3, 5, padding=(2, 2))
+c = nn.Conv2d(3, 3, 5, padding=(2, 2))
+# c2 = nn.Conv2d(6, 10, 5, padding=(2, 2))
+# c3 = nn.Conv2d(10, 50, 5, padding=(2, 2))
+# c4 = nn.Conv2d(50, 30, 5, padding=(2, 2))
+c5 = nn.Conv2d(3, 3, 5, padding=(2, 2))
 d = nn.Dropout(p=0.4)
 
 def forward(x):
     o = c(x)
-    o = c2(o)
-    o = d(c3(o))
-    o = c4(o)
+    # o = c2(o)
+    # o = d(c3(o))
+    # o = c4(o)
     return c5(o)
 
-all = [d, c, c2, c3, c4, c5]
-params = list(c.parameters()) + list(c2.parameters()) + list(c3.parameters()) + list(c4.parameters()) + list(c5.parameters()) + list(d.parameters())
+# all = [d, c, c2, c3, c4, c5]
+all = [d, c, c5]
+params = []
+for a in all:
+    params += list(a.parameters())
+
 # for a in all:
 #     params.extend(list(a.parameters()))
-optimizer = torch.optim.SGD(params, lr=1e-8, momentum=0.9)
+optimizer = torch.optim.SGD(params, lr=1e-5, momentum=0.9)
 
-for _ in range(0, 1000):
+for _ in range(0, 10000):
     o = forward(batch)
     loss = torch.sum(torch.abs(o - i))
     print(loss)
@@ -78,5 +83,5 @@ for _ in range(0, 1000):
     loss.backward()
     optimizer.step()
 
-save_image(o, name='final.png')
+save_image(o * 255., name='final.png')
 
