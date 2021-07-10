@@ -47,9 +47,6 @@ i = load_random_image()
 
 batch = i.clone().detach().type(torch.float) # torch.tensor(i, dtype=torch.float)
 batch = torch.unsqueeze(batch, 0)
-save_image(batch, name='img_2.png')
-
-save_image(batch)
 
 c = nn.Conv2d(3, 6, 5, padding=(2, 2))(batch)
 c = nn.Conv2d(6, 10, 5, padding=(2, 2))(c)
@@ -57,7 +54,5 @@ c = nn.Conv2d(10, 50, 5, padding=(2, 2))(c)
 c = nn.Conv2d(50, 30, 5, padding=(2, 2))(c)
 c = nn.Conv2d(30, 3, 5, padding=(2, 2))(c)
 
-# c5 = c3 + fully_connect(c)
+save_image(c, name='final.png')
 
-# save_image(batch)
-# t = save_image(c)
