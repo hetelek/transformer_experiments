@@ -26,7 +26,20 @@ class ImageEncoder(nn.Module):
         x = self.linear_2(x)
         return x
 
+class MetaEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear_1 = nn.Linear(4, 10)  # [speed, steering angle, lateral acceleration, long acceleration]
+        self.linear_2 = nn.Linear(10, 50)
+
+    def forward(self, x):
+        x = self.linear_1(x)
+        x = self.linear_2(x)
+        return x
+
 image_encoder = ImageEncoder()
+meta_encoder = MetaEncoder()
+
 optimizer = t.optim.Adam(image_encoder.parameters(), lr=1e-4)
 
 for epoch in range(0, 1000):
