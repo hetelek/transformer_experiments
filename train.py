@@ -1,5 +1,5 @@
-
 import pickle
+import time
 import numpy as np
 from PIL import Image
 
@@ -14,15 +14,17 @@ with open(file, 'rb') as fo:
 # dict['pontoon_s_000643']
 # dict[b'data']
 
-def save_image(tensor):
+def save_image(tensor, name='img_1.png'):
     np_array = tensor.detach().numpy()
+    if len(np_array.shape) == 4:
+        np_array = np_array.squeeze()
+    assert np_array.shape == (3, 32, 32)
+
     np_array = np_array.astype(np.uint8)
-    np_array = np_array.squeeze()
     np_array = np.moveaxis(np_array, 0, 2)
-    print(np_array.dtype)
     
     img = Image.fromarray(np_array)
-    img.save('img_1.png')
+    img.save(name)
 
 def load_random_image():
     i = np.random.randint(0, len(dict[b'data']))
@@ -30,24 +32,22 @@ def load_random_image():
     g = dict[b'data'][i][1024:1024+1024]
     b = dict[b'data'][i][1024+1024:]
 
-    r = np.array(r).reshape((32, 32))
-    g = np.array(g).reshape((32, 32))
-    b = np.array(b).reshape((32, 32))
+    r = torch.tensor(r).reshape((32, 32))
+    g = torch.tensor(g).reshape((32, 32))
+    b = torch.tensor(b).reshape((32, 32))
+    img = torch.stack((r, g, b))
 
-    array = np.stack((r, g, b))
-    array = np.moveaxis(array, 0, -1)
-    print(array.shape)
-    img = Image.fromarray(array)
-    img.save('img_orig.png')
+    return img
 
-    return array, dict[b'filenames'][i]
+# for _ in range(0, 100):
+#     i, _ = load_random_image()
+#     time.sleep(1)
 
-i, _ = load_random_image()
+i = load_random_image()
 
-batch = torch.tensor(i, dtype=torch.float)
+batch = i.clone().detach().type(torch.float) # torch.tensor(i, dtype=torch.float)
 batch = torch.unsqueeze(batch, 0)
-batch = torch.transpose(batch, 1, 2)
-batch = torch.transpose(batch, 1, 3)
+save_image(batch, name='img_2.png')
 
 save_image(batch)
 
