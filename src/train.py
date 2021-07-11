@@ -34,6 +34,27 @@ class ImageEncoder(nn.Module):
         x = self.linear_2(x)
         return x
 
+class VideoEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.image_encoder_1 = ImageEncoder()
+    
+    def forward(self, batch_video_frames):
+        # [batch, frames_per_video, channels_per_frame, frame_width, frame_height]
+        assert len(batch_video_frames) == 5
+        assert batch_video_frames[2] == 3
+
+        all_encoded_frames = []
+        for i in range(0, len(batch_video_frames)):
+            video_frames = batch_video_frames[i]
+            encoded_frames = self.image_encoder_1(video_frames)
+            all_encoded_frames.append(encoded_frames)
+
+        # output: [batch, num_encoded_frames, frame_encoding]
+        output = t.stack(all_encoded_frames)
+        assert output.shape[0] == batch_video_frames.shape[0]
+        return output
+
 class MetaEncoder(nn.Module):
     def __init__(self):
         super().__init__()
