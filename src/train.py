@@ -1,3 +1,4 @@
+from PIL.Image import Image
 import data
 
 import torch as t
@@ -41,8 +42,8 @@ class VideoEncoder(nn.Module):
     
     def forward(self, batch_video_frames):
         # [batch, frames_per_video, channels_per_frame, frame_width, frame_height]
-        assert len(batch_video_frames) == 5
-        assert batch_video_frames[2] == 3
+        assert len(batch_video_frames.shape) == 5
+        assert batch_video_frames.shape[2] == 3  # enfore 3 channels
 
         all_encoded_frames = []
         for i in range(0, len(batch_video_frames)):
@@ -54,6 +55,18 @@ class VideoEncoder(nn.Module):
         output = t.stack(all_encoded_frames)
         assert output.shape[0] == batch_video_frames.shape[0]
         return output
+
+
+
+# ve = VideoEncoder()
+# i1, _ = data.load_random_batch(100)
+# i2, _ = data.load_random_batch(100)
+# i = t.stack([i1, i2])
+# print('i:', len(i.shape))
+# o = ve(i)
+# print(o.shape)
+# print(o)
+# exit(0)
 
 class MetaEncoder(nn.Module):
     def __init__(self):
