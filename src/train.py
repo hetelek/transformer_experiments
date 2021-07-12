@@ -24,6 +24,7 @@ class ImageEncoder(nn.Module):
         self.conv2d_1 = nn.Conv2d(3, 3, 5, padding=2)
         self.conv2d_2 = nn.Conv2d(3, 3, 5, padding=2)
         self.flatten = nn.Flatten()
+        # 3072 = 32 width * 32 height * 3 channels
         self.linear_1 = nn.Linear(3072, 100)
         self.linear_2 = nn.Linear(100, 50)
 
@@ -35,38 +36,22 @@ class ImageEncoder(nn.Module):
         x = self.linear_2(x)
         return x
 
-class VideoEncoder(nn.Module):
-    def __init__(self):
+class TimeEncoder(nn.Module):
+    def __init__(self, encoder_class):
         super().__init__()
-        self.image_encoder_1 = ImageEncoder()
+        self.encoder_1 = encoder_class()
     
-    def forward(self, batch_video_frames):
-        # [batch, frames_per_video, channels_per_frame, frame_width, frame_height]
-        assert len(batch_video_frames.shape) == 5
-        assert batch_video_frames.shape[2] == 3  # enfore 3 channels
-
+    def forward(self, batch_frames):
         all_encoded_frames = []
-        for i in range(0, len(batch_video_frames)):
-            video_frames = batch_video_frames[i]
-            encoded_frames = self.image_encoder_1(video_frames)
+        for i in range(0, batch_frames.shape[0]):  # batch_frames.shape[0] or len(batch_frames)?
+            frames = batch_frames[i]
+            encoded_frames = self.encoder_1(frames)
             all_encoded_frames.append(encoded_frames)
 
         # output: [batch, num_encoded_frames, frame_encoding]
         output = t.stack(all_encoded_frames)
-        assert output.shape[0] == batch_video_frames.shape[0]
+        assert output.shape[0] == batch_frames.shape[0]
         return output
-
-
-
-# ve = VideoEncoder()
-# i1, _ = data.load_random_batch(100)
-# i2, _ = data.load_random_batch(100)
-# i = t.stack([i1, i2])
-# print('i:', len(i.shape))
-# o = ve(i)
-# print(o.shape)
-# print(o)
-# exit(0)
 
 class MetaEncoder(nn.Module):
     def __init__(self):
@@ -79,18 +64,36 @@ class MetaEncoder(nn.Module):
         x = self.linear_2(x)
         return x
 
+
+print('image')
+x = TimeEncoder(ImageEncoder)
+# in: [num_videos, num_images_per_video, channels_per_image, width, height]
+e = x(t.randn(10, 78, 3, 32, 32))
+# out: [num_videos, num_images_per_video, frame_encoding]
+print(e.shape)
+
+print()
+print('meta')
+
+x1 = TimeEncoder(MetaEncoder)
+# in: 10 videos, 78 frames each, 4 inputs per frame
+e = x1(t.randn(10, 78, 4))
+# out: 10 videos, 78 frames each, 50 embedding size
+print(e.shape)
+exit(0)
+
 class DecisionMaker(nn.Module):
     def __init__(self):
         super().__init__()
-        self.image_encoder = ImageEncoder()
-        self.meta_encoder = MetaEncoder()
+        self.video_encoder = TimeEncoder(ImageEncoder)
+        self.meta_encoder = TimeEncoder(MetaEncoder)
         self.linear_1 = nn.Linear(100, 200)
         self.linear_2 = nn.Linear(200, 200)
         self.linear_3 = nn.Linear(200, 2) # [target_speed, target_angle]
 
-    def forward(self, images, metas):
-        assert images.shape[0] == metas.shape[0]
-        encoded_images = self.image_encoder(images)
+    def forward(self, batch_videos, metas):
+        assert batch_videos.shape[0] == metas.shape[0]  # check num batches match
+        encoded_videos = self.video_encoder(batch_videos)
         encoded_metas = self.meta_encoder(metas)
         x = t.cat([encoded_images, encoded_metas], 1)
         x = self.linear_1(x)
