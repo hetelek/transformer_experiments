@@ -1,6 +1,7 @@
 import av
 import data
 import torch as t
+import random
 
 
 def load_video(video_file):
@@ -23,10 +24,10 @@ def stitch_images(images):
             stitched[:, r*width:(r+1)*width, c*height:(c+1)*height] = image
     return stitched
 
-frame_data = load_video('clip.m4v')
+video_frames = load_video('clip3.mp4')
 final = stitch_images([
-    [frame_data[0], frame_data[1]],
-    [frame_data[100], frame_data[240]],
-    [frame_data[24]]
+    [random.choice(video_frames), random.choice(video_frames)],
+    [random.choice(video_frames), random.choice(video_frames)],
+    [random.choice(video_frames)]
 ])
 data.save_image(final)
