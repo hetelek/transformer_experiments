@@ -14,11 +14,19 @@ def load_video(video_file):
         video_frames.append(frame_data)
     return t.stack(video_frames)
 
+
+def stitch_images(images):
+    width, height = images[0][0].shape[1], images[0][0].shape[2]
+    stitched = t.zeros((3, width*len(images), height*len(images[0])))
+    for r, image_rows in enumerate(images):
+        for c, image in enumerate(image_rows):
+            stitched[:, r*width:(r+1)*width, c*height:(c+1)*height] = image
+    return stitched
+
 frame_data = load_video('clip.m4v')
-frame_data2 = load_video('clip2.m4v')
-print(frame_data[0].shape)
-print(frame_data2[0].shape)
-final = t.cat([frame_data[0], frame_data2[100]], 1)
-final = t.cat([final, frame_data2[300]], 1)
-print(final.shape)
+final = stitch_images([
+    [frame_data[0], frame_data[1]],
+    [frame_data[100], frame_data[240]],
+    [frame_data[24]]
+])
 data.save_image(final)
