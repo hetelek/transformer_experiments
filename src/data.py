@@ -40,7 +40,7 @@ def save_image(tensor, name='img_1.png'):
     np_array = tensor.detach().numpy()
     if len(np_array.shape) == 4:
         np_array = np_array.squeeze()
-    assert np_array.shape == (3, 32, 32)
+    assert np_array.shape[0] == 3
 
     np_array = np_array.astype(np.uint8)
     np_array = np.moveaxis(np_array, 0, 2)
