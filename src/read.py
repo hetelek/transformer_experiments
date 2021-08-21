@@ -1,5 +1,5 @@
 import torch as t
-from torch.autograd import Variable
+import random
 
 C_COUNT = 0
 C_TO_INDEX = {}
@@ -44,6 +44,7 @@ def sample_character(softmax):
 
 with open('brief.txt', 'r') as f:
     raw_dataset = f.read()
+    raw_dataset = raw_dataset.replace('\n', '')
 
 tokens = []
 for i in range(0, len(raw_dataset)):
@@ -52,21 +53,36 @@ tokens = t.cat(tokens)
 assert tokens[0] == tokens[1]
 assert tokens[0] != tokens[2]
 
-PAGE_SIZE = 10
+PAGE_SIZE = 100
+def load_batch(batch_size):
+    batch_X = []
+    batch_Y = t.zeros([batch_size, len(C_TO_INDEX)])
+    for i in range(0, batch_size):
+        start_index = random.randint(0, len(tokens) - PAGE_SIZE)
+        batch_X.append(tokens[start_index:start_index+PAGE_SIZE])
+        batch_Y[i][tokens[start_index+PAGE_SIZE]] = 1
+    return t.stack(batch_X), batch_Y
+
+batch_X, batch_Y = load_batch(10)
+for i in range(0, len(batch_X)):
+    x = ''.join([INDEX_TO_C[z.item()] for z in batch_X[i]])
+    y = sample_character(batch_Y[i])
+    print('{}[{}]'.format(x, y))
+exit(0)
+
 predictor = CharacterPredictor(PAGE_SIZE, len(C_TO_INDEX), 1)
 
 start_index = 2
 o = predictor(tokens[start_index:start_index+PAGE_SIZE])
 one_hot_label = t.zeros([len(C_TO_INDEX)])
-one_hot_label[tokens[start_index+PAGE_SIZE+1]] = 1
+one_hot_label[tokens[start_index+PAGE_SIZE]] = 1
 loss = t.sum(t.abs(o - one_hot_label))
 
 print(sample_character(o))
 print(sample_character(one_hot_label))
 print(loss)
 
-exit(0)
-
+optimizer = t.optim.Adam(predictor.parameters(), lr=1e-4)
 for i in range(0, input_embedding.shape[0] - PAGE_SIZE):
     embeddings = input_embedding[i:i+PAGE_SIZE]
     print(embeddings)
