@@ -22,15 +22,14 @@ class CharacterPredictor(t.nn.Module):
         super().__init__()
         self.num_characters_in = num_characters_in
         self.embed = t.nn.Embedding(vocab_size, embedding_size)
-        self.w1 = t.nn.Linear(num_characters_in, 100)
+        self.w1 = t.nn.Linear(num_characters_in * embedding_size, 100)
         self.w2 = t.nn.Linear(100, 100)
         self.w3 = t.nn.Linear(100, vocab_size)
         self.softmax = t.nn.Softmax(dim=1)
 
     def forward(self, character_indexes):
-        assert len(character_indexes) == self.num_characters_in
-        x = self.embed(character_indexes)
-        x = t.unsqueeze(t.squeeze(x, dim=1), dim=0) # why?
+        assert character_indexes.shape[-1] == self.num_characters_in
+        x = self.embed(character_indexes).view((-1, self.w1.in_features))
         x = self.w1(x)
         x = self.w2(x)
         x = self.w3(x)
@@ -63,28 +62,24 @@ def load_batch(batch_size):
         batch_Y[i][tokens[start_index+PAGE_SIZE]] = 1
     return t.stack(batch_X), batch_Y
 
-batch_X, batch_Y = load_batch(10)
+print('Some example data...')
+batch_X, batch_Y = load_batch(13)
 for i in range(0, len(batch_X)):
     x = ''.join([INDEX_TO_C[z.item()] for z in batch_X[i]])
     y = sample_character(batch_Y[i])
     print('{}[{}]'.format(x, y))
-exit(0)
+print()
+
+print('batch_X shape = {}'.format(batch_X.shape))
 
 predictor = CharacterPredictor(PAGE_SIZE, len(C_TO_INDEX), 1)
-
-start_index = 2
-o = predictor(tokens[start_index:start_index+PAGE_SIZE])
-one_hot_label = t.zeros([len(C_TO_INDEX)])
-one_hot_label[tokens[start_index+PAGE_SIZE]] = 1
-loss = t.sum(t.abs(o - one_hot_label))
-
-print(sample_character(o))
-print(sample_character(one_hot_label))
-print(loss)
-
 optimizer = t.optim.Adam(predictor.parameters(), lr=1e-4)
-for i in range(0, input_embedding.shape[0] - PAGE_SIZE):
-    embeddings = input_embedding[i:i+PAGE_SIZE]
-    print(embeddings)
-    print(embeddings.shape)
-    break
+for i in range(0, 1000):
+    batch_X, batch_Y = load_batch(15)
+    o = predictor(batch_X)
+    loss = t.sum(t.abs(o - batch_Y))
+    print(loss)
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
