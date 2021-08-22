@@ -87,7 +87,7 @@ cross_entropy = t.nn.CrossEntropyLoss()
 predictor = CharacterPredictor(PAGE_SIZE, len(C_TO_INDEX), 1)
 optimizer = t.optim.Adam(predictor.parameters(), lr=1e-3)
 for i in range(0, 1000000):
-    batch_X, batch_Y = load_batch(15)
+    batch_X, batch_Y = load_batch(100)
     o = predictor(batch_X)
     loss = cross_entropy(o, batch_Y)
 
@@ -98,10 +98,11 @@ for i in range(0, 1000000):
     if i % 1000 == 0:
         print(loss.item())
         sample_size = 2
-        sample_batch, _ = load_batch(sample_size)
+        sample_batch, sample_batch_y = load_batch(sample_size)
         o = predictor(sample_batch, softmax=True)
         for i in range(0, sample_size):
             x = ''.join([INDEX_TO_C[z.item()] for z in sample_batch[i]])
             y = sample_character(o[i])
-            print('{}[{}]'.format(x, y))
+            y_label = INDEX_TO_C[sample_batch_y[i].item()]
+            print('{}[{},{}]'.format(x, y, y_label))
         print()
