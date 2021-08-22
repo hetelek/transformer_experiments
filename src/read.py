@@ -1,4 +1,5 @@
 import torch as t
+import torch.nn.functional as F
 import random
 
 C_COUNT = 0
@@ -30,9 +31,9 @@ class CharacterPredictor(t.nn.Module):
     def forward(self, character_indexes, softmax=False):
         assert character_indexes.shape[-1] == self.num_characters_in
         x = self.embed(character_indexes).view((-1, self.w1.in_features))
-        x = self.w1(x)
-        x = self.w2(x)
-        x = self.w3(x)
+        x = F.relu(self.w1(x))
+        x = F.relu(self.w2(x))
+        x = F.relu(self.w3(x))
         if softmax:
             x = self.softmax(x)
         return x
@@ -53,6 +54,7 @@ def sample_character(y):
 with open('brief.txt', 'r') as f:
     raw_dataset = f.read()
     raw_dataset = raw_dataset.replace('\n', ' ')
+    # raw_dataset = raw_dataset[:1000]
 
 tokens = []
 for i in range(0, len(raw_dataset)):
@@ -66,7 +68,7 @@ def load_batch(batch_size):
     batch_X = []
     batch_Y = t.zeros([batch_size], dtype=t.long)
     for i in range(0, batch_size):
-        start_index = random.randint(0, len(tokens) - PAGE_SIZE)
+        start_index = random.randint(0, len(tokens) - PAGE_SIZE - 1)
         batch_X.append(tokens[start_index:start_index+PAGE_SIZE])
         batch_Y[i] = tokens[start_index+PAGE_SIZE]
     return t.stack(batch_X), batch_Y
@@ -83,8 +85,8 @@ print('batch_X shape = {}'.format(batch_X.shape))
 
 cross_entropy = t.nn.CrossEntropyLoss()
 predictor = CharacterPredictor(PAGE_SIZE, len(C_TO_INDEX), 1)
-optimizer = t.optim.Adam(predictor.parameters(), lr=1e-1)
-for i in range(0, 1000):
+optimizer = t.optim.Adam(predictor.parameters(), lr=1e-3)
+for i in range(0, 1000000):
     batch_X, batch_Y = load_batch(15)
     o = predictor(batch_X)
     loss = cross_entropy(o, batch_Y)
@@ -93,4 +95,13 @@ for i in range(0, 1000):
     loss.backward()
     optimizer.step()
 
-    print(loss)
+    if i % 1000 == 0:
+        print(loss.item())
+        sample_size = 2
+        sample_batch, _ = load_batch(sample_size)
+        o = predictor(sample_batch, softmax=True)
+        for i in range(0, sample_size):
+            x = ''.join([INDEX_TO_C[z.item()] for z in sample_batch[i]])
+            y = sample_character(o[i])
+            print('{}[{}]'.format(x, y))
+        print()
