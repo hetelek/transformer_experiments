@@ -27,23 +27,32 @@ class CharacterPredictor(t.nn.Module):
         self.w3 = t.nn.Linear(100, vocab_size)
         self.softmax = t.nn.Softmax(dim=1)
 
-    def forward(self, character_indexes):
+    def forward(self, character_indexes, softmax=False):
         assert character_indexes.shape[-1] == self.num_characters_in
         x = self.embed(character_indexes).view((-1, self.w1.in_features))
         x = self.w1(x)
         x = self.w2(x)
         x = self.w3(x)
-        x = self.softmax(x)
+        if softmax:
+            x = self.softmax(x)
         return x
 
-def sample_character(softmax):
-    x = t.multinomial(softmax, num_samples=1)
+def sample_character(y):
+    i = None
+    if isinstance(y, t.Tensor) and list(y.shape) == []:
+        i = int(y.item())
+    elif isinstance(y, int):
+        i = y
+    if isinstance(i, int):
+        y = t.zeros([len(C_TO_INDEX)])
+        y[i] = 1
+    x = t.multinomial(y, num_samples=1)
     return INDEX_TO_C[x.item()]
 
 
 with open('brief.txt', 'r') as f:
     raw_dataset = f.read()
-    raw_dataset = raw_dataset.replace('\n', '')
+    raw_dataset = raw_dataset.replace('\n', ' ')
 
 tokens = []
 for i in range(0, len(raw_dataset)):
@@ -55,11 +64,11 @@ assert tokens[0] != tokens[2]
 PAGE_SIZE = 100
 def load_batch(batch_size):
     batch_X = []
-    batch_Y = t.zeros([batch_size, len(C_TO_INDEX)])
+    batch_Y = t.zeros([batch_size], dtype=t.long)
     for i in range(0, batch_size):
         start_index = random.randint(0, len(tokens) - PAGE_SIZE)
         batch_X.append(tokens[start_index:start_index+PAGE_SIZE])
-        batch_Y[i][tokens[start_index+PAGE_SIZE]] = 1
+        batch_Y[i] = tokens[start_index+PAGE_SIZE]
     return t.stack(batch_X), batch_Y
 
 print('Some example data...')
@@ -72,14 +81,16 @@ print()
 
 print('batch_X shape = {}'.format(batch_X.shape))
 
+cross_entropy = t.nn.CrossEntropyLoss()
 predictor = CharacterPredictor(PAGE_SIZE, len(C_TO_INDEX), 1)
-optimizer = t.optim.Adam(predictor.parameters(), lr=1e-4)
+optimizer = t.optim.Adam(predictor.parameters(), lr=1e-1)
 for i in range(0, 1000):
     batch_X, batch_Y = load_batch(15)
     o = predictor(batch_X)
-    loss = t.sum(t.abs(o - batch_Y))
-    print(loss)
+    loss = cross_entropy(o, batch_Y)
 
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+
+    print(loss)
