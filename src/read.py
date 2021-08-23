@@ -1,5 +1,6 @@
 import torch as t
 import torch.nn.functional as F
+from torch.utils import tensorboard as tb
 import random
 
 C_COUNT = 0
@@ -86,6 +87,19 @@ print('batch_X shape = {}'.format(batch_X.shape))
 cross_entropy = t.nn.CrossEntropyLoss()
 predictor = CharacterPredictor(PAGE_SIZE, len(C_TO_INDEX), 1)
 optimizer = t.optim.Adam(predictor.parameters(), lr=1e-3)
+epoch = 0
+
+try:
+    checkpoint = t.load('checkpoint')
+    predictor.load_state_dict(checkpoint['predictor_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+except FileNotFoundError:
+    print('Warning: no checkpoint loaded')
+
+# tensorboard --logdir=runs
+writer = tb.SummaryWriter()
+
 for i in range(0, 1000000):
     batch_X, batch_Y = load_batch(100)
     o = predictor(batch_X)
@@ -94,8 +108,16 @@ for i in range(0, 1000000):
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+    
+    epoch += 1
+    writer.add_scalar("Loss/train", loss, epoch)
 
     if i % 1000 == 0:
+        t.save({
+            'epoch': epoch,
+            'predictor_state_dict': predictor.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+        }, 'checkpoint')
         print(loss.item())
         sample_size = 2
         sample_batch, sample_batch_y = load_batch(sample_size)
