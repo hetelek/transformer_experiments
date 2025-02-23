@@ -2,3 +2,4 @@
 *.png
 events.out.tfevents.*
 __pycache__/
+.DS_Store
