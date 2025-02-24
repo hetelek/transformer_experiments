@@ -10,6 +10,112 @@ import torch.nn.functional as F
 import time
 from torch import Tensor
 
+import tiktoken
+import base64
+
+LANGUAGES = {
+    "en": "english",
+    "zh": "chinese",
+    "de": "german",
+    "es": "spanish",
+    "ru": "russian",
+    "ko": "korean",
+    "fr": "french",
+    "ja": "japanese",
+    "pt": "portuguese",
+    "tr": "turkish",
+    "pl": "polish",
+    "ca": "catalan",
+    "nl": "dutch",
+    "ar": "arabic",
+    "sv": "swedish",
+    "it": "italian",
+    "id": "indonesian",
+    "hi": "hindi",
+    "fi": "finnish",
+    "vi": "vietnamese",
+    "he": "hebrew",
+    "uk": "ukrainian",
+    "el": "greek",
+    "ms": "malay",
+    "cs": "czech",
+    "ro": "romanian",
+    "da": "danish",
+    "hu": "hungarian",
+    "ta": "tamil",
+    "no": "norwegian",
+    "th": "thai",
+    "ur": "urdu",
+    "hr": "croatian",
+    "bg": "bulgarian",
+    "lt": "lithuanian",
+    "la": "latin",
+    "mi": "maori",
+    "ml": "malayalam",
+    "cy": "welsh",
+    "sk": "slovak",
+    "te": "telugu",
+    "fa": "persian",
+    "lv": "latvian",
+    "bn": "bengali",
+    "sr": "serbian",
+    "az": "azerbaijani",
+    "sl": "slovenian",
+    "kn": "kannada",
+    "et": "estonian",
+    "mk": "macedonian",
+    "br": "breton",
+    "eu": "basque",
+    "is": "icelandic",
+    "hy": "armenian",
+    "ne": "nepali",
+    "mn": "mongolian",
+    "bs": "bosnian",
+    "kk": "kazakh",
+    "sq": "albanian",
+    "sw": "swahili",
+    "gl": "galician",
+    "mr": "marathi",
+    "pa": "punjabi",
+    "si": "sinhala",
+    "km": "khmer",
+    "sn": "shona",
+    "yo": "yoruba",
+    "so": "somali",
+    "af": "afrikaans",
+    "oc": "occitan",
+    "ka": "georgian",
+    "be": "belarusian",
+    "tg": "tajik",
+    "sd": "sindhi",
+    "gu": "gujarati",
+    "am": "amharic",
+    "yi": "yiddish",
+    "lo": "lao",
+    "uz": "uzbek",
+    "fo": "faroese",
+    "ht": "haitian creole",
+    "ps": "pashto",
+    "tk": "turkmen",
+    "nn": "nynorsk",
+    "mt": "maltese",
+    "sa": "sanskrit",
+    "lb": "luxembourgish",
+    "my": "myanmar",
+    "bo": "tibetan",
+    "tl": "tagalog",
+    "mg": "malagasy",
+    "as": "assamese",
+    "tt": "tatar",
+    "haw": "hawaiian",
+    "ln": "lingala",
+    "ha": "hausa",
+    "ba": "bashkir",
+    "jw": "javanese",
+    "su": "sundanese",
+    "yue": "cantonese",
+}
+
 SCRIPT_DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 ASSET_DIR_PATH = os.path.join(SCRIPT_DIR_PATH, 'assets')
 
@@ -182,20 +288,64 @@ class Whisper(torch.nn.Module):
         self.decoder = TextDecoder(
             dims.n_vocab, dims.n_text_ctx, dims.n_text_state, dims.n_text_head, dims.n_text_layer)
 
+    def is_multilingual(self):
+        return self.dims.n_vocab >= 51865
+
+    def num_languages(self):
+        return self.dims.n_vocab - 51765 - int(self.is_multilingual())
+
     def forward(self, mel: Tensor, tokens: Tensor) -> Tensor:
         audio_features = self.encoder(mel)
         return self.decoder(tokens, audio_features)
 
+    @lru_cache(maxsize=None)
+    def get_encoding(self):
+        tiktoken_vocab_name = 'multilingual' if self.is_multilingual() else 'gpt2'
+        vocab_path = os.path.join(ASSET_DIR_PATH, f"{tiktoken_vocab_name}.tiktoken")
+        ranks = {
+            base64.b64decode(token): int(rank)
+            for token, rank in (line.split() for line in open(vocab_path) if line)
+        }
+        n_vocab = len(ranks)
+        special_tokens = {}
+
+        num_languages = self.num_languages()
+        specials = [
+            "<|endoftext|>",
+            "<|startoftranscript|>",
+            *[f"<|{lang}|>" for lang in list(LANGUAGES.keys())[:num_languages]],
+            "<|translate|>",
+            "<|transcribe|>",
+            "<|startoflm|>",
+            "<|startofprev|>",
+            "<|nospeech|>",
+            "<|notimestamps|>",
+            *[f"<|{i * 0.02:.2f}|>" for i in range(1501)],
+        ]
+
+        for token in specials:
+            special_tokens[token] = n_vocab
+            n_vocab += 1
+
+        t = tiktoken.Encoding(
+            name=os.path.basename(vocab_path),
+            explicit_n_vocab=n_vocab,
+            pat_str=r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""",
+            mergeable_ranks=ranks,
+            special_tokens=special_tokens,
+        )
+        t.special_tokens = {}
+        for special in t.special_tokens_set:
+            special_token = t.encode_single_token(special)
+            t.special_tokens[special] = special_token
+        return t
+
 
 def load_tiny_model(device="cuda" if torch.cuda.is_available() else "cpu"):
-    dims = ModelDimensions(
-        n_mels=80, n_audio_ctx=1500, n_audio_state=384, n_audio_head=6, n_audio_layer=4,
-        n_vocab=51865, n_text_ctx=448, n_text_state=384, n_text_head=6, n_text_layer=4
-    )
-    model = Whisper(dims)
     # from https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt
-    checkpoint = torch.load(os.path.join(
-        ASSET_DIR_PATH, "tiny.pt"), map_location=device)
+    checkpoint = torch.load(os.path.join(ASSET_DIR_PATH, "tiny.pt"), map_location=device)
+    print(f"dims = {checkpoint['dims']}")
+    model = Whisper(ModelDimensions(**checkpoint['dims']))
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     model.to(device)
@@ -256,7 +406,32 @@ def forward_pass(audio_chunk: np.ndarray):
     print(f'mel_spectrogram: {mel_spectrogram.shape}')
     assert mel_spectrogram.shape == (N_MELS, N_FRAMES)  # [80, 3000]
     mel_spectrogram = mel_spectrogram.unsqueeze(0)
-    print(model.encoder(mel_spectrogram).shape)
+    audio_features = model.encoder(mel_spectrogram)
+    print(f'encoder_output_shape (audio_features): {audio_features.shape}')
+
+    # langs = tuple(LANGUAGES.keys())[: self.num_languages]
+    sot_sequence = [
+        model.get_encoding().special_tokens['<|startoftranscript|>'],
+        model.get_encoding().special_tokens['<|en|>'],
+        model.get_encoding().special_tokens['<|transcribe|>'],
+        model.get_encoding().special_tokens['<|notimestamps|>']
+    ]
+    tokens = torch.tensor([sot_sequence]) 
+    '''
+    should we only take the first token?
+
+    if tokens.shape[-1] > self.initial_token_length:
+        # only need to use the last token except in the first forward pass
+        tokens = tokens[:, -1:]
+
+    return self.model.decoder(tokens, audio_features, kv_cache=self.kv_cache)
+    '''
+    text_logits = model.decoder(tokens, audio_features, kv_cache=None)
+    next_token_id = torch.argmax(text_logits[:, -1], dim=-1).item()
+    print(next_token_id)
+    print(model.get_encoding().decode([next_token_id]))
+    print(f'decoder_output_shape (text_logits): {text_logits.shape}')
+    print(text_logits[:, -1].shape)
     # TODO: forward pass and decode!
     exit(0)
 
@@ -334,5 +509,5 @@ def process_audio_file(file_path: str):
         time.sleep(0.1)
 
 
-audio_file = os.path.join(SCRIPT_DIR_PATH, 'samples', 'question-16khz.wav')
+audio_file = os.path.join(SCRIPT_DIR_PATH, 'samples', '2-question-16khz.wav')
 process_audio_file(audio_file)
