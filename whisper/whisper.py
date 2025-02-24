@@ -13,6 +13,7 @@ from torch import Tensor
 import tiktoken
 import base64
 
+MODEL_CHECKPOINT = 'tiny.pt'  # 'tiny.pt' or 'medium.pt' or 'large-v3-turbo.pt'
 LANGUAGES = {
     "en": "english",
     "zh": "chinese",
@@ -301,14 +302,14 @@ class Whisper(torch.nn.Module):
     @lru_cache(maxsize=None)
     def get_encoding(self):
         tiktoken_vocab_name = 'multilingual' if self.is_multilingual() else 'gpt2'
-        vocab_path = os.path.join(ASSET_DIR_PATH, f"{tiktoken_vocab_name}.tiktoken")
+        vocab_path = os.path.join(
+            ASSET_DIR_PATH, f"{tiktoken_vocab_name}.tiktoken")
         ranks = {
             base64.b64decode(token): int(rank)
             for token, rank in (line.split() for line in open(vocab_path) if line)
         }
         n_vocab = len(ranks)
         special_tokens = {}
-
         num_languages = self.num_languages()
         specials = [
             "<|endoftext|>",
@@ -341,14 +342,16 @@ class Whisper(torch.nn.Module):
         return t
 
 
-def load_tiny_model(device="cuda" if torch.cuda.is_available() else "cpu"):
+def load_tiny_model(device):
     # from https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt
-    checkpoint = torch.load(os.path.join(ASSET_DIR_PATH, "tiny.pt"), map_location=device)
+    checkpoint = torch.load(os.path.join(
+        ASSET_DIR_PATH, MODEL_CHECKPOINT), map_location=device)
     print(f"dims = {checkpoint['dims']}")
     model = Whisper(ModelDimensions(**checkpoint['dims']))
+    model.to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    model.to(device)
+    print(f"Model is on: {next(model.parameters()).device}")
     return model
 
 
@@ -399,41 +402,21 @@ def forward_pass(audio_chunk: np.ndarray):
     assert audio_chunk.shape[0] == N_SAMPLES
     model = None
     if model is None:
-        model = load_tiny_model()
+        device = 'cpu'
+        if torch.backends.mps.is_available():
+            device = 'mps'
+        if torch.cuda.is_available():
+            device = 'cuda'
+        model = load_tiny_model(device)
+
+    device = next(model.parameters()).device
 
     # convert the audio chunk to a mel spectrogram
-    mel_spectrogram = log_mel_spectrogram(audio_chunk)
-    print(f'mel_spectrogram: {mel_spectrogram.shape}')
+    mel_start = time.perf_counter()
+    mel_spectrogram = log_mel_spectrogram(audio_chunk, device=device)
+    mel_end = time.perf_counter()
+    print(f"mel_time = {(mel_end - mel_start) * 1000:.3f} ms")
     assert mel_spectrogram.shape == (N_MELS, N_FRAMES)  # [80, 3000]
-    mel_spectrogram = mel_spectrogram.unsqueeze(0)
-    audio_features = model.encoder(mel_spectrogram)
-    print(f'encoder_output_shape (audio_features): {audio_features.shape}')
-
-    # langs = tuple(LANGUAGES.keys())[: self.num_languages]
-    sot_sequence = [
-        model.get_encoding().special_tokens['<|startoftranscript|>'],
-        model.get_encoding().special_tokens['<|en|>'],
-        model.get_encoding().special_tokens['<|transcribe|>'],
-        model.get_encoding().special_tokens['<|notimestamps|>']
-    ]
-    tokens = torch.tensor([sot_sequence]) 
-    '''
-    should we only take the first token?
-
-    if tokens.shape[-1] > self.initial_token_length:
-        # only need to use the last token except in the first forward pass
-        tokens = tokens[:, -1:]
-
-    return self.model.decoder(tokens, audio_features, kv_cache=self.kv_cache)
-    '''
-    text_logits = model.decoder(tokens, audio_features, kv_cache=None)
-    next_token_id = torch.argmax(text_logits[:, -1], dim=-1).item()
-    print(next_token_id)
-    print(model.get_encoding().decode([next_token_id]))
-    print(f'decoder_output_shape (text_logits): {text_logits.shape}')
-    print(text_logits[:, -1].shape)
-    # TODO: forward pass and decode!
-    exit(0)
 
     # DEBUG: save mel spectrogram to disk
     # plt.figure(figsize=(10, 4))
@@ -445,6 +428,51 @@ def forward_pass(audio_chunk: np.ndarray):
     # plt.savefig('mel_spectrogram.png', dpi=300, bbox_inches='tight')
     # plt.close()
     # # exit(0)
+
+    # encode spectrogram
+    mel_spectrogram = mel_spectrogram.unsqueeze(0)
+    encode_start = time.perf_counter()
+    audio_features = model.encoder(mel_spectrogram)
+    encode_end = time.perf_counter()
+    audio_features.to(device)
+    print(f"encode_time = {(encode_end - encode_start) * 1000:.3f} ms")
+
+    # decode in loop until <|endoftext|> token is reached
+    sot_sequence = [
+        model.get_encoding().special_tokens['<|startoftranscript|>'],
+        model.get_encoding().special_tokens['<|en|>'],
+        model.get_encoding().special_tokens['<|transcribe|>'],
+        model.get_encoding().special_tokens['<|notimestamps|>']
+    ]
+    tokens = torch.tensor([sot_sequence], device=device)
+    decode_times = []
+    while True:
+        decode_start = time.perf_counter()
+        text_logits = model.decoder(tokens, audio_features, kv_cache=None)
+        next_token_id = torch.argmax(text_logits[:, -1], dim=-1).item()
+        decode_end = time.perf_counter()
+        decode_times.append(decode_end - decode_start)
+
+        if next_token_id == model.get_encoding().special_tokens['<|endoftext|>']:
+            print()
+            break
+
+        print(model.get_encoding().decode([next_token_id]), end='', flush=True)
+
+        if len(decode_times) > 300:
+            print('Too many tokens')
+            break
+
+        # print(f'decoder_output_shape (text_logits): {text_logits.shape}')
+        # print(text_logits[:, -1].shape)
+        tokens = torch.cat((tokens, torch.tensor(
+            [[next_token_id]], device=device)), dim=1)
+
+    print(
+        f"decode_time = {sum(decode_times) * 1000:.3f}ms avg={sum(decode_times) * 1000 / len(decode_times):.3f}ms")
+
+    # exit(0)
+    # print()
 
 
 audio_buffer = None
@@ -501,7 +529,7 @@ def process_audio_file(file_path: str):
     audio = waveform.numpy().reshape(-1)
 
     # simulate audio streaming in real-time chunks of 100ms
-    streaming_chunk_size = SAMPLE_RATE // 1
+    streaming_chunk_size = CHUNK_LENGTH * SAMPLE_RATE
     for i in range(0, len(audio), streaming_chunk_size):
         print(f'sending audio chunk: {i}:{i + streaming_chunk_size}')
         chunk = audio[i:i + streaming_chunk_size]
@@ -509,5 +537,5 @@ def process_audio_file(file_path: str):
         time.sleep(0.1)
 
 
-audio_file = os.path.join(SCRIPT_DIR_PATH, 'samples', '2-question-16khz.wav')
+audio_file = os.path.join(SCRIPT_DIR_PATH, 'samples', 'untitled.wav')
 process_audio_file(audio_file)
