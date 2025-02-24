@@ -13,7 +13,7 @@ from torch import Tensor
 import tiktoken
 import base64
 
-MODEL_CHECKPOINT = 'tiny.pt'  # 'tiny.pt' or 'medium.pt' or 'large-v3-turbo.pt'
+MODEL_NAME = 'tiny' # 'tiny' ('tiny.en' is untested) or 'medium' or 'large-v3-turbo'
 LANGUAGES = {
     "en": "english",
     "zh": "chinese",
@@ -281,13 +281,41 @@ class TextDecoder(torch.nn.Module):
 
 
 class Whisper(torch.nn.Module):
-    def __init__(self, dims: ModelDimensions):
+    def __init__(self, model_name: str, dims: ModelDimensions):
         super().__init__()
         self.dims = dims
         self.encoder = AudioEncoder(
             dims.n_mels, dims.n_audio_ctx, dims.n_audio_state, dims.n_audio_head, dims.n_audio_layer)
         self.decoder = TextDecoder(
             dims.n_vocab, dims.n_text_ctx, dims.n_text_state, dims.n_text_head, dims.n_text_layer)
+
+        # alignment_heads = {
+        #     'tiny.en': [*[0]*6, 1, *[0]*5, 1, *[0]*4, *[1]*6, 0],
+        #     'tiny': [*[0]*14, 1, *[0]*3, 1, 0, *[1]*4],
+        #     'base.en': [*[0]*27, 1, *[0]*11, 1, 0, 1, *[0]*3, 1, 0, 1],
+        #     'base': [*[0]*25, 1, *[0]*8, *[1]*2, *[0]*3, 1, 0, *[1]*2, 0, 1, 0, 1, 0],
+        #     'small.en': [*[0]*78, 1, *[0]*5, 1, *[0]*2, 1, *[0]*4, 1, *[0]*5, 1,
+        #                  *[0]*2, 1, 0, 1, *[0]*4, 1, *[0]*3, 1, *[0]*3, 1, 0, 1, 0,
+        #                  *[1]*4, *[0]*2, 1, *[0]*4, 1, *[0]*2, 1, 0, 1, *[0]*7],
+        #     'small': [*[0]*63, 1, *[0]*5, 1, *[0]*26, 1, *[0]*3, 1, *[0]*2, *[1]*2,
+        #               *[0]*3, 1, *[0]*6, 1, 0, 1, *[0]*7, 1, *[0]*18],
+        #     'medium.en': [*[0]*180, 1, *[0]*44, 1, *[0]*10, 1, 0, 1, *[0]*5, 1, *[0]*11, 1,
+        #                   *[0]*3, 1, *[0]*4, 1, *[0]*18, 1, 0, 1, *[0]*8, 1, *[0]*2, 1, *[0]*4,
+        #                   1, *[0]*16, 1, *[0]*2, 1, *[0]*5, 1, *[0]*4, 1, *[0]*13, 1, *[0]*35],
+        #     'medium': [*[0]*223, 1, *[0]*20, 1, *[0]*10, 1, 0, 1, *[0]*62, 1, *[0]*51, 1, *[0]*11],
+        #     'large-v1': [*[0]*199, 1, *[0]*22, 1, 0, 1, *[0]*12, 1, *[0]*209, 1, *[0]*3, 1, *[0]*5,
+        #                  1, *[0]*4, 1, *[0]*12, 1, *[0]*164],
+        #     'large-v2': [*[0]*212, 1, *[0]*64, 1, *[0]*53, *[1]*3, *[0]*21, *[1]*2, *[0]*7, 1,
+        #                  *[0]*6, 1, *[0]*7, 1, *[0]*11, 1, *[0]*30, *[1]*2, *[0]*19, 1, *[0]*5, 1,
+        #                  *[0]*2, 1, *[0]*12, 1, 0, 1, *[0]*5, 1, *[0]*31, 1, *[0]*15, 1, *[0]*10, 1,
+        #                  *[0]*22, 1, *[0]*84],
+        #     'large-v3': [*[0]*140, 1, *[0]*76, 1, *[0]*40, 1, *[0]*13, 1, *[0]*48, 1, *[0]*32, 1,
+        #                  *[0]*36, 1, *[0]*32, 1, *[0]*56, 1, *[0]*24, 1, *[0]*133],
+        #     'large': [*[0]*140, 1, *[0]*76, 1, *[0]*40, 1, *[0]*13, 1, *[0]*48, 1, *[0]*32, 1,
+        #               *[0]*36, 1, *[0]*32, 1, *[0]*56, 1, *[0]*24, 1, *[0]*133],
+        #     'large-v3-turbo': [*[0]*44, 1, *[0]*6, 1, *[0]*11, 1, *[0]*2, 1, *[0]*4, 1, *[0]*2, 1, *[0]*5],
+        #     'turbo': [*[0]*44, 1, *[0]*6, 1, *[0]*11, 1, *[0]*2, 1, *[0]*4, 1, *[0]*2, 1, *[0]*5],
+        # }
 
     def is_multilingual(self):
         return self.dims.n_vocab >= 51865
@@ -344,10 +372,9 @@ class Whisper(torch.nn.Module):
 
 def load_tiny_model(device):
     # from https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt
-    checkpoint = torch.load(os.path.join(
-        ASSET_DIR_PATH, MODEL_CHECKPOINT), map_location=device)
+    checkpoint = torch.load(os.path.join(ASSET_DIR_PATH, f'{MODEL_NAME}.pt'), map_location=device)
     print(f"dims = {checkpoint['dims']}")
-    model = Whisper(ModelDimensions(**checkpoint['dims']))
+    model = Whisper(MODEL_NAME, ModelDimensions(**checkpoint['dims']))
     model.to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
@@ -442,7 +469,9 @@ def forward_pass(audio_chunk: np.ndarray):
         model.get_encoding().special_tokens['<|startoftranscript|>'],
         model.get_encoding().special_tokens['<|en|>'],
         model.get_encoding().special_tokens['<|transcribe|>'],
-        model.get_encoding().special_tokens['<|notimestamps|>']
+        model.get_encoding().special_tokens['<|notimestamps|>'],
+        # model.get_encoding().special_tokens['<|0.00|>'],
+        # *model.get_encoding().encode('I was'),
     ]
     tokens = torch.tensor([sot_sequence], device=device)
     decode_times = []
@@ -453,6 +482,8 @@ def forward_pass(audio_chunk: np.ndarray):
         decode_end = time.perf_counter()
         decode_times.append(decode_end - decode_start)
 
+        # next_token_ids = torch.argmax(text_logits.squeeze(), dim=-1)
+        # print(model.get_encoding().decode(next_token_ids.tolist()))
         if next_token_id == model.get_encoding().special_tokens['<|endoftext|>']:
             print()
             break
@@ -529,7 +560,7 @@ def process_audio_file(file_path: str):
     audio = waveform.numpy().reshape(-1)
 
     # simulate audio streaming in real-time chunks of 100ms
-    streaming_chunk_size = CHUNK_LENGTH * SAMPLE_RATE
+    streaming_chunk_size = exact_div(N_SAMPLES, 1)
     for i in range(0, len(audio), streaming_chunk_size):
         print(f'sending audio chunk: {i}:{i + streaming_chunk_size}')
         chunk = audio[i:i + streaming_chunk_size]
