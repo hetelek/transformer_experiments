@@ -2,7 +2,38 @@ import torch
 from safetensors.torch import load_file
 import time
 
-device = "mps" if torch.backends.mps.is_available() else "cpu"
+import os, shutil
+from huggingface_hub import hf_hub_download
+
+
+# repo_id = "deepseek-ai/DeepSeek-V3"
+# destination_dir = "/Volumes/T7/DeepSeek-V3-671B/"
+
+# # Total number of model files
+# num_files = 163
+
+# # Download each file
+# for i in range(1, num_files + 1):
+#     filename = f"model-{i:05d}-of-000163.safetensors"
+#     target_file = os.path.join(destination_dir, filename)
+#     if os.path.exists(target_file):
+#         print('skip', target_file)
+#         continue
+#     # exit(1)
+#     print(f"Downloading {filename}...")
+#     try:
+#         file_path = hf_hub_download(
+#             repo_id=repo_id,
+#             filename=filename,
+#             cache_dir=destination_dir,
+#         )
+#         real_path = os.path.realpath(file_path)
+#         shutil.move(real_path, target_file)
+#         print(f"Saved {filename} to {file_path}")
+#     except Exception as e:
+#         print(f"Failed to download {filename}. Error: {e}")
+
+# exit(0)
 
 '''
 /Users/hetelek/Desktop/:
@@ -29,6 +60,9 @@ Total loaded: 35423620480
 Loading time: 75395.60ms
 Load speed: 448.07 MB/s
 '''
+
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+
 
 # from deepseek: 5G file
 all_weights_size = 0
