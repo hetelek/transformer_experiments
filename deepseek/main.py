@@ -66,7 +66,7 @@ device = "mps" if torch.backends.mps.is_available() else "cpu"
 
 # from deepseek: 5G file
 all_weights_size = 0
-safetensors_paths = [f"/Volumes/T7/DeepSeek-V3-671B/model-0000{i}-of-000163.safetensors" for i in range(1, 9)]
+safetensors_paths = [f"/Users/hetelek/Desktop/DeepSeek-V3-weights/model-0000{i}-of-000163.safetensors" for i in range(1, 9)]
 file_to_weights_size = {}
 for safetensors_path in safetensors_paths:
     with open(safetensors_path, 'rb') as f:

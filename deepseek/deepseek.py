@@ -151,6 +151,9 @@ def linear(x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor] =
         - If `gemm_impl == "bf16"`, dequantization and a `bf16` GEMM operation are applied.
         - For other cases, the function applies quantization to `x` and uses `fp8_gemm` for computation.
     """
+    # print(x.shape)
+    # print(weight.scale.shape)
+    # print(weight.scale.shape)
     if weight.element_size() > 1:
         return F.linear(x, weight, bias)
     elif gemm_impl == "bf16":
@@ -661,7 +664,7 @@ class MoE(nn.Module):
         self.n_activated_experts = args.n_activated_experts
         self.experts_start_idx = rank * self.n_local_experts
         self.experts_end_idx = self.experts_start_idx + self.n_local_experts
-        self.gate = Gate(args)
+        self.gate = Gate(args) # Lazy(Gate, args)
         self.experts = nn.ModuleList([Expert(args.dim, args.moe_inter_dim) if self.experts_start_idx <= i < self.experts_end_idx else None
                                       for i in range(self.n_routed_experts)])
         self.shared_experts = MLP(args.dim, args.n_shared_experts * args.moe_inter_dim)
@@ -757,6 +760,7 @@ class Transformer(nn.Module):
         global world_size, rank
         world_size = dist.get_world_size() if dist.is_initialized() else 1
         rank = dist.get_rank() if dist.is_initialized() else 0
+        print(args)
         Linear.dtype = torch.float8_e4m3fn if args.dtype == "fp8" else torch.bfloat16
         super().__init__()
         self.max_seq_len = args.max_seq_len
@@ -764,6 +768,7 @@ class Transformer(nn.Module):
         self.layers = torch.nn.ModuleList()
         for layer_id in range(args.n_layers):
             self.layers.append(Block(layer_id, args))
+            print(f'Layer {layer_id} initialized')
         self.norm = RMSNorm(args.dim)
         self.head = ColumnParallelLinear(args.dim, args.vocab_size, dtype=torch.get_default_dtype())
         self.register_buffer("freqs_cis", precompute_freqs_cis(args), persistent=False)
@@ -798,22 +803,35 @@ class Transformer(nn.Module):
 
 
 if __name__ == "__main__":
-    config = 'configs/config_16B.json'  #config_236B.json
+    config = 'configs/config_671B_custom.json'  # configs/config_671B.json
     with open(config) as f:
         args = ModelArgs(**json.load(f))
 
     torch.set_default_dtype(torch.bfloat16)
     torch.set_default_device("mps")
     torch.manual_seed(0)
-    weights = load_file("/Users/hetelek/Desktop/model-00001-of-000163.safetensors", device='mps')
-    # print(weights.keys())
-    print(weights['model.embed_tokens.weight'].shape)
-    print(args.vocab_size)
-    # print(weights['model.layers.0.attn.wq.weight'].shape)
-    exit(0)
+    weights = load_file("/Users/hetelek/Desktop/DeepSeek-V3-weights/model-00001-of-000163.safetensors", device='mps')
+    print(weights.keys())
+    # print(weights['model.embed_tokens.weight'].shape)
+    # print(args.vocab_size)
+    # # print(weights['model.layers.0.attn.wq.weight'].shape)
+    # exit(0)
 
-    x = torch.randint(0, args.vocab_size, (2, 128))
+    x = torch.randint(0, args.vocab_size, (5, 128))
     model = Transformer(args)
-    print(model.parameters)
-    exit(0)
+    # print(model.forward(torch.zeros(1, 4096, dtype=torch.int)).size())
+    # print(model.parameters)
+    # model_state_dict = model.state_dict()
+    # print('model:')
+    # for k in model_state_dict.keys():
+    #     if 'layers.2' not in k:
+    #         continue
+    #     print(k, model_state_dict[k].shape)
+    # print('--')
+    # print('safetensors:')
+    # for k in weights.keys():
+    #     if 'layers.2' not in k or '_scale_inv' in k:
+    #         continue
+    #     print(k, weights[k].shape)
+    # exit(0)
     print(model(x).size())
