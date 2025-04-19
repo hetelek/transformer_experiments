@@ -6,19 +6,9 @@ Requires CUDA (for Triton kernels) and Triton installed.
 import sys
 import torch
 
-try:
-    # Triton kernel implementations
-    from kernel import act_quant, weight_dequant
-except ImportError:
-    print("Skipping test: Triton kernels not available (requires Triton + CUDA).")
-    sys.exit(0)
+from kernel import act_quant, weight_dequant
 
-try:
-    # Reference Python implementation
-    from dequantize import weight_dequant_2
-except ImportError:
-    print("Skipping test: Python reference dequantize not available (requires dequantize.py).")
-    sys.exit(0)
+from dequantize import weight_dequant_2
 
 def main():
     # Check CUDA availability
@@ -50,8 +40,8 @@ def main():
     x_q_fp16 = x_q.to(torch.float16)
     s_fp16 = s.to(torch.float16)
     y_ref = weight_dequant_2(x_q_fp16, s_fp16)
-    # Cast reference output back to float32 for comparison
-    y_ref = y_ref.to(torch.float32, device=device)
+    # Cast reference output back to float32 and move to CUDA for comparison
+    y_ref = y_ref.to(device=device, dtype=torch.float32)
 
     # Compare outputs
     diff = (y_triton - y_ref).abs().max()

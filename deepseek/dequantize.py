@@ -1,6 +1,6 @@
 import torch
-from safetensors.torch import load_file, save_file
-import time
+# from safetensors.torch import load_file, save_file
+# import time
 
 def weight_dequant_2(x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
     """
@@ -13,47 +13,35 @@ def weight_dequant_2(x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
     Returns:
         torch.Tensor: Dequantized weights of shape [M, N]
     """
+    # Emulate Triton weight_dequant kernel behavior using 2D block tiling
     assert x.dim() == 2 and s.dim() == 2, "Inputs must be 2D tensors"
+    # Promote to float32 for accurate computation (Triton kernel uses float32)
+    x = x.to(torch.float32)
+    s = s.to(torch.float32)
     M, N = x.shape
-    S_M, S_N = s.shape
-
-    # Calculate number of blocks (full tiles of s over x)
-    num_blocks_m = M // S_M  # Full blocks along rows
-    num_blocks_n = N // S_N  # Full blocks along columns
-    rem_m = M % S_M  # Remainder rows
-    rem_n = N % S_N  # Remainder columns
-
-    # Reshape x into blocks
-    # If there's a remainder, pad x to the next multiple of S_M, S_N
-    if rem_m > 0 or rem_n > 0:
-        padded_M = (num_blocks_m + (rem_m > 0)) * S_M
-        padded_N = (num_blocks_n + (rem_n > 0)) * S_N
-        x_padded = torch.zeros(padded_M, padded_N, device=x.device, dtype=x.dtype)
-        x_padded[:M, :N] = x
-        x = x_padded
-        num_blocks_m = padded_M // S_M
-        num_blocks_n = padded_N // S_N
-    else:
-        padded_M, padded_N = M, N
-
-    # Reshape x to [num_blocks_m, S_M, num_blocks_n, S_N]
-    x_reshaped = x.view(num_blocks_m, S_M, num_blocks_n, S_N)
-
-    # Reshape s to broadcast over blocks
-    s_expanded = s.view(1, S_M, 1, S_N).expand(num_blocks_m, S_M, num_blocks_n, S_N)
-
-    # Element-wise multiplication
-    y_reshaped = x_reshaped * s_expanded
-
-    # Reshape back to padded size
-    y = y_reshaped.view(padded_M, padded_N)
-
-    # Trim back to original size if padded
-    if padded_M != M or padded_N != N:
-        y = y[:M, :N]
-
+    # Number of blocks along columns inferred from s
+    num_blocks_cols = s.shape[1]
+    # Derive block size (assumes square blocks) from N and number of column blocks
+    block_size = N // num_blocks_cols
+    # Number of blocks along rows
+    num_blocks_rows = (M + block_size - 1) // block_size
+    # Flatten scale tensor (row-major) and allocate output
+    s_flat = s.flatten()
+    y = torch.empty_like(x)
+    # Loop over block rows and columns
+    for i in range(num_blocks_rows):
+        r0 = i * block_size
+        r1 = min(r0 + block_size, M)
+        for j in range(num_blocks_cols):
+            c0 = j * block_size
+            c1 = min(c0 + block_size, N)
+            idx = i * num_blocks_cols + j
+            scale = s_flat[idx]
+            y[r0:r1, c0:c1] = x[r0:r1, c0:c1] * scale
     return y
 
+
+"""
 safetensors_path = f"/Users/hetelek/Desktop/DeepSeek-V3-weights/model-0000{1}-of-000163.safetensors"
 start_time = time.time()
 # f = load_file(safetensors_path, device='mps')
@@ -82,3 +70,4 @@ time.sleep(10)
 # output_path = safetensors_path + '_dequant.safetensors'  # Specify your desired output path
 # print(output_path)
 # save_file(f, output_path)
+"""
